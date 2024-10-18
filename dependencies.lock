@@ -1,0 +1,22 @@
+dependencies:
+  espressif/arduino-esp32:
+    component_hash: 9a9b83b699bc216d4f83516f149c0e68a12518ad58cc929855456fb02dcac0bd
+    source:
+      pre_release: true
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 2.0.14
+  espressif/esp-dsp:
+    component_hash: fa7fe74305df6da25867437ebcd4213e047cbfc0556cf92067ab657fce537c6e
+    source:
+      service_url: https://api.components.espressif.com/
+      type: service
+    version: 1.5.2
+  idf:
+    component_hash: null
+    source:
+      type: idf
+    version: 4.4.8
+manifest_hash: 04f0834c3c814b9694c0443885a673cceab088ca7198821e84c2940fe41dcfb8
+target: esp32
+version: 1.0.0
