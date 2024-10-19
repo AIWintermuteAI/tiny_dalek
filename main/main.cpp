@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include "esp_spiffs.h"
+#include "esp_random.h"
 #include "sdkconfig.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -19,6 +20,10 @@ extern "C"
 
 const int stepsPerRevolution = 2048;  // change this to fit the number of steps per revolution
 static const char *TAG = "MAIN";
+char *text = nullptr;
+
+TaskHandle_t stepperTask = NULL;
+TaskHandle_t ledsTask = NULL;
 
 // ULN2003 Motor Driver Pins
 #define IN1 5
@@ -42,16 +47,19 @@ void init_stepper() {
 //   Serial.begin(115200);
 }
 
-void run_stepper() {
-  // step one revolution in one direction:
-  Serial.println("clockwise");
-  myStepper.step(stepsPerRevolution);
-  delay(1000);
+void run_stepper(void *param) {
+    uint32_t random_number = *((int *)param);
+    while (true) {
+        // step one revolution in one direction:
+        Serial.println("clockwise");
+        myStepper.step(random_number);
+        delay(100);
 
-  // step one revolution in the other direction:
-  Serial.println("counterclockwise");
-  myStepper.step(-stepsPerRevolution);
-  delay(1000);
+        // step one revolution in the other direction:
+        Serial.println("counterclockwise");
+        myStepper.step(-random_number);
+        delay(100);
+    }
 }
 
 void init_leds() {
@@ -59,15 +67,19 @@ void init_leds() {
   pixels.setBrightness(10); // Set BRIGHTNESS to about 4% (max = 255)
 }
 
-void run_leds() {
-  pixels.clear();
+void run_leds(void *param) {
+    uint32_t random_number = *((int *)param);
+    while (true) {
+        pixels.clear();
 
-  for(int i=0; i < NUMPIXELS; i++) {
+        for(int i = 0; i < NUMPIXELS; i++) {
 
-    pixels.setPixelColor(i, pixels.Color(0, 150, 0));
-    pixels.show();
-    delay(DELAYVAL);
-  }
+        pixels.setPixelColor(i, pixels.Color(0, 150, random_number));
+        pixels.show();
+        delay(random_number);
+        }
+        printf("LEDs done\n");
+    }
 }
 
 /**
@@ -142,7 +154,7 @@ bool output_audio(void *cbdata, int16_t* b) {
  *
  * @param text The text to output
  */
-void say_text(char *text)
+void say_chunk(char *text)
 {
     ESP8266SAM *sam = new ESP8266SAM(output_audio);
     sam->SetSpeed(120);
@@ -155,19 +167,9 @@ void say_text(char *text)
     delete sam;
 }
 
-/**
- * @brief Callbacks once generation is done
- *
- * @param tk_s The number of tokens per second generated
- */
-void generate_complete_cb(char *generated_text, int ix, float tk_s)
+void say_text(char *text)
 {
-    //truncate the generated text to ix
-    char *text = (char *)malloc(ix);
-    memcpy(text, generated_text, ix);
-
-    ESP_LOGI(TAG, "Generated text: %s", text);
-    // say in chunks of 128 characters
+        // say in chunks of 128 characters
     int len = strlen(text);
     int start = 0;
     int end = 64;
@@ -181,30 +183,51 @@ void generate_complete_cb(char *generated_text, int ix, float tk_s)
         memcpy(chunk, text + start, end - start);
         chunk[end - start] = '\0';
         ESP_LOGI(TAG, "Saying: %s", chunk);
-        say_text(chunk);
+        say_chunk(chunk);
         start = end;
         end += 64;
     }
-    //say_text(text);
-    ESP_LOGI(TAG, "Tokens per second: %.2f", tk_s);
 }
 
-extern "C" void app_main()
+void say_with_animation(uint32_t random_number) {
+    // start stepper and leds using freertos threads
+    xTaskCreate(run_stepper, "run_stepper", 4096, &random_number, 5, &stepperTask);
+    xTaskCreate(run_leds, "run_leds", 4096, &random_number, 5, &ledsTask);
+    say_text(text);
+    vTaskDelete(stepperTask);
+    vTaskDelete(ledsTask);
+}
+
+/**
+ * @brief Callbacks once generation is done
+ *
+ * @param tk_s The number of tokens per second generated
+ */
+void generate_complete_cb(char *generated_text, int ix, float tk_s)
 {
-    //initArduino();
-    //Serial.begin(115200);
-    init_leds();
-    init_stepper();
-    init_audio();
-    init_storage();
+    //truncate the generated text to ix
+    text = (char *)malloc(ix);
+    memcpy(text, generated_text, ix);
+
+    ESP_LOGI(TAG, "Generated text: %s", text);
+    ESP_LOGI(TAG, "Tokens per second: %.2f", tk_s);
+    // say_text(text);
+    // say_with_animation(text);
+}
+
+void generate_text(uint32_t random_number)
+{
 
     // default parameters
-    char *checkpoint_path = "/data/stories260K.bin"; // e.g. out/model.bin
+    char *checkpoint_path = "/data/tiny_dalek.bin"; // e.g. out/model.bin
     char *tokenizer_path = "/data/tok512.bin";
-    float temperature = 1.0f;        // 0.0 = greedy deterministic. 1.0 = original. don't set higher
+    float temperature = 0.75f;        // 0.0 = greedy deterministic. 1.0 = original. don't set higher
     float topp = 0.9f;               // top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
     int steps = 64;                 // number of steps to run for
-    char *prompt = NULL;             // prompt string
+    //char *prompt = (char*)malloc(1);
+    //prompt[0] = (char)('a' + 1);
+    char *prompt = "E";
+    printf("Prompt is %s\n", prompt);
     unsigned long long rng_seed = 0; // seed rng with time by default
 
     // parameter validation/overrides
@@ -228,8 +251,30 @@ extern "C" void app_main()
 
     // run!
     generate(&transformer, &tokenizer, &sampler, prompt, steps, &generate_complete_cb);
+    //free(prompt);
+}
+
+extern "C" void app_main()
+{
+    //initArduino();
+    //Serial.begin(115200);
+    init_leds();
+    init_stepper();
+    init_audio();
+    init_storage();
+
+    // generate random number
+    uint32_t random_number = esp_random();
+    // Random value between 0 and UINT32_MAX
+    // scale it to 255
+    random_number = (random_number % 255) + 1;
+    printf("Random number: %d\n", random_number);
+
+    generate_text(random_number);
+    say_with_animation(random_number);
+
     // deinit the audio
     example_deinit();
-    run_leds();
-    run_stepper();
+    //run_leds(nullptr);
+    //run_stepper(nullptr);
 }
