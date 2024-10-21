@@ -22,6 +22,15 @@ const int stepsPerRevolution = 2048;  // change this to fit the number of steps 
 static const char *TAG = "MAIN";
 char *text = nullptr;
 
+// default parameters
+char *checkpoint_path = "/data/tiny_dalek.bin"; // e.g. out/model.bin
+char *tokenizer_path = "/data/tok512.bin";
+float temperature = 0.25f;        // 0.0 = greedy deterministic. 1.0 = original. don't set higher
+float topp = 0.9f;               // top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
+int steps = 128;                 // number of steps to run for
+unsigned long long rng_seed = 0; // seed rng with time by default
+int32_t stepper_pos = 0;         // initial position of stepper motor
+
 TaskHandle_t stepperTask = NULL;
 TaskHandle_t ledsTask = NULL;
 
@@ -40,46 +49,67 @@ Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 // initialize the stepper library
 Stepper myStepper(stepsPerRevolution, IN1, IN3, IN2, IN4);
 
+Transformer transformer;
+Tokenizer tokenizer;
+Sampler sampler;
+
 void init_stepper() {
   // set the speed at 5 rpm
-  myStepper.setSpeed(5);
+  myStepper.setSpeed(10);
 //   // initialize the serial port
 //   Serial.begin(115200);
 }
 
 void run_stepper(void *param) {
     uint32_t random_number = *((int *)param);
+    stepper_pos = random_number * 2;
+    if (random_number % 2 == 0) {
+        stepper_pos = -stepper_pos;
+    }
+    ESP_LOGI(TAG, "stepper_pos: %d", stepper_pos);
     while (true) {
         // step one revolution in one direction:
-        Serial.println("clockwise");
-        myStepper.step(random_number);
+        myStepper.step(stepper_pos);
         delay(100);
 
         // step one revolution in the other direction:
-        Serial.println("counterclockwise");
-        myStepper.step(-random_number);
+        myStepper.step(-stepper_pos);
         delay(100);
+        stepper_pos = 0;
     }
 }
 
 void init_leds() {
   pixels.begin();
-  pixels.setBrightness(10); // Set BRIGHTNESS to about 4% (max = 255)
+  //pixels.setBrightness(122); // Set BRIGHTNESS to about 4% (max = 255)
+}
+
+uint32_t generate_random_number() {
+    // generate random number
+    uint32_t random_number = esp_random();
+    // Random value between 0 and UINT32_MAX
+    // scale it to 255
+    random_number = (random_number % 255) + 1;
+    ESP_LOGD(TAG, "Random number: %d\n", random_number);
+    return random_number;
 }
 
 void run_leds(void *param) {
-    uint32_t random_number = *((int *)param);
     while (true) {
+        uint32_t random_number = generate_random_number();
         pixels.clear();
-
-        for(int i = 0; i < NUMPIXELS; i++) {
-
-        pixels.setPixelColor(i, pixels.Color(0, 150, random_number));
         pixels.show();
         delay(random_number);
-        }
-        printf("LEDs done\n");
+        pixels.fill(pixels.Color(256 - random_number, random_number / 2, random_number));
+        pixels.show();
+        delay(random_number);
+        ESP_LOGD(TAG, "LEDs done\n");
     }
+}
+
+void turn_off_leds() {
+    pixels.clear();
+    pixels.show();
 }
 
 /**
@@ -95,7 +125,7 @@ void run_leds(void *param) {
     example_i2s_init();
     example_set_file_play_mode();
     ESP_LOGI(TAG, "Audio initialized");
- }
+}
 
 /**
  * @brief intializes SPIFFS storage
@@ -194,8 +224,13 @@ void say_with_animation(uint32_t random_number) {
     xTaskCreate(run_stepper, "run_stepper", 4096, &random_number, 5, &stepperTask);
     xTaskCreate(run_leds, "run_leds", 4096, &random_number, 5, &ledsTask);
     say_text(text);
-    vTaskDelete(stepperTask);
     vTaskDelete(ledsTask);
+    turn_off_leds();
+    while (stepper_pos != 0)
+    {
+        delay(10);
+    }
+    vTaskDelete(stepperTask);
 }
 
 /**
@@ -215,66 +250,85 @@ void generate_complete_cb(char *generated_text, int ix, float tk_s)
     // say_with_animation(text);
 }
 
-void generate_text(uint32_t random_number)
-{
-
-    // default parameters
-    char *checkpoint_path = "/data/tiny_dalek.bin"; // e.g. out/model.bin
-    char *tokenizer_path = "/data/tok512.bin";
-    float temperature = 0.75f;        // 0.0 = greedy deterministic. 1.0 = original. don't set higher
-    float topp = 0.9f;               // top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
-    int steps = 64;                 // number of steps to run for
-    //char *prompt = (char*)malloc(1);
-    //prompt[0] = (char)('a' + 1);
-    char *prompt = "E";
-    printf("Prompt is %s\n", prompt);
-    unsigned long long rng_seed = 0; // seed rng with time by default
-
+void init_llm(uint32_t random_number) {
     // parameter validation/overrides
     if (rng_seed <= 0)
-        rng_seed = (unsigned int)time(NULL);
+        rng_seed = random_number;
 
     // build the Transformer via the model .bin file
-    Transformer transformer;
     ESP_LOGI(TAG, "LLM Path is %s", checkpoint_path);
     build_transformer(&transformer, checkpoint_path);
     if (steps == 0 || steps > transformer.config.seq_len)
         steps = transformer.config.seq_len; // override to ~max length
 
     // build the Tokenizer via the tokenizer .bin file
-    Tokenizer tokenizer;
     build_tokenizer(&tokenizer, tokenizer_path, transformer.config.vocab_size);
 
     // build the Sampler
-    Sampler sampler;
     build_sampler(&sampler, transformer.config.vocab_size, temperature, topp, rng_seed);
+}
+
+void generate_text(uint32_t random_number)
+{
+    char *prompt = nullptr;
+
+    if (random_number % 4 == 0) {
+        prompt = (char*)malloc(4);
+        prompt[0] = 'E';
+        prompt[1] = 'X';
+        prompt[2] = 'T';
+        prompt[3] = '\0';
+    }
+    else {
+        prompt = (char*)malloc(2);
+        char letters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        char letter = letters[random_number % 26];
+        prompt[0] = letter;
+        prompt[1] = '\0';
+    }
+
+    printf("Prompt is %s\n", prompt);
 
     // run!
     generate(&transformer, &tokenizer, &sampler, prompt, steps, &generate_complete_cb);
-    //free(prompt);
+    free(prompt);
 }
 
 extern "C" void app_main()
 {
     //initArduino();
     //Serial.begin(115200);
+    pinMode(23, INPUT);
+
+    uint32_t random_number = generate_random_number();
+
     init_leds();
     init_stepper();
-    init_audio();
     init_storage();
-
-    // generate random number
-    uint32_t random_number = esp_random();
-    // Random value between 0 and UINT32_MAX
-    // scale it to 255
-    random_number = (random_number % 255) + 1;
-    printf("Random number: %d\n", random_number);
+    init_llm(random_number);
 
     generate_text(random_number);
-    say_with_animation(random_number);
 
-    // deinit the audio
-    example_deinit();
+    while (true)
+    {
+        ESP_LOGI(TAG, "Waiting for PIR");
+        while (true)
+        {
+            if (digitalRead(23) == HIGH)
+            {
+                break;
+            }
+            delay(50);
+        }
+        init_audio();
+        say_with_animation(random_number);
+        deinit_audio();
+        random_number = generate_random_number();
+        generate_text(random_number);
+        // deinit the audio
+
+    }
+
     //run_leds(nullptr);
     //run_stepper(nullptr);
 }

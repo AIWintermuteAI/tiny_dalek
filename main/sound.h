@@ -46,7 +46,7 @@ void example_i2s_init(void)
      i2s_set_adc_mode(I2S_ADC_UNIT, I2S_ADC_CHANNEL);
 }
 
-void example_deinit(void)
+void deinit_audio(void)
 {
     i2s_driver_uninstall(EXAMPLE_I2S_NUM);
 }
