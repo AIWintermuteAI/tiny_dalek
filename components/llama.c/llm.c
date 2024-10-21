@@ -894,7 +894,7 @@ int compare(const void *a, const void *b)
     return 0;
 }
 
-int sample_topp(v4sf *probabilities, int n, v4sf topp, ProbIndex *probindex, v4sf coin)
+int sample_topp(v4sf *probabilities, int n, float topp, ProbIndex *probindex, v4sf coin)
 {
     // top-p sampling (or "nucleus sampling") samples from the smallest set of
     // tokens that exceed probability topp. This way we never sample tokens that
@@ -944,7 +944,7 @@ int sample_topp(v4sf *probabilities, int n, v4sf topp, ProbIndex *probindex, v4s
     return probindex[last_idx].index; // in case of rounding errors
 }
 
-void build_sampler(Sampler *sampler, int vocab_size, v4sf temperature, v4sf topp, unsigned long long rng_seed)
+void build_sampler(Sampler *sampler, int vocab_size, float temperature, float topp, unsigned long long rng_seed)
 {
     sampler->vocab_size = vocab_size;
     sampler->temperature = temperature;
@@ -977,6 +977,7 @@ int sample(Sampler *sampler, v4sf *logits)
 {
     // sample the token given the logits and some hyperparameters
     int next;
+    ESP_LOGD(TAG, "Sampler parameters: Temperature: %f, Top-p: %f", sampler->temperature, sampler->topp);
     if (sampler->temperature == 0.0f)
     {
         // greedy argmax sampling: take the token with the highest probability
