@@ -11,6 +11,8 @@
 #include "esp_log.h"
 #include <time.h>
 
+#include "wifi_hal.hpp"
+
 extern "C"
 {
 #include "llm.h"
@@ -52,6 +54,65 @@ Stepper myStepper(stepsPerRevolution, IN1, IN3, IN2, IN4);
 Transformer transformer;
 Tokenizer tokenizer;
 Sampler sampler;
+
+// Motor A
+#define motor1Pin1 15
+#define motor1Pin2 2
+// Motor B
+#define motor2Pin1 0
+#define motor2Pin2 4
+
+void init_motors() {
+  // set all the motor control pins to outputs
+  pinMode(motor1Pin1, OUTPUT);
+  pinMode(motor1Pin2, OUTPUT);
+  pinMode(motor2Pin1, OUTPUT);
+  pinMode(motor2Pin2, OUTPUT);
+}
+
+void run_motors(uint8_t direction) {
+    switch (direction) {
+        case 0:
+            // Motor A
+            digitalWrite(motor1Pin1, HIGH);
+            digitalWrite(motor1Pin2, LOW);
+            // Motor B
+            digitalWrite(motor2Pin1, LOW);
+            digitalWrite(motor2Pin2, HIGH);
+            break;
+        case 1:
+            // Motor A
+            digitalWrite(motor1Pin1, LOW);
+            digitalWrite(motor1Pin2, HIGH);
+            // Motor B
+            digitalWrite(motor2Pin1, HIGH);
+            digitalWrite(motor2Pin2, LOW);
+            break;
+        case 2:
+            // Motor A
+            digitalWrite(motor1Pin1, LOW);
+            digitalWrite(motor1Pin2, HIGH);
+            // Motor B
+            digitalWrite(motor2Pin1, LOW);
+            digitalWrite(motor2Pin2, HIGH);
+            break;
+        case 3:
+            // Motor A
+            digitalWrite(motor1Pin1, HIGH);
+            digitalWrite(motor1Pin2, LOW);
+            // Motor B
+            digitalWrite(motor2Pin1, HIGH);
+            digitalWrite(motor2Pin2, LOW);
+            break;
+        default:
+            // Motor A
+            digitalWrite(motor1Pin1, LOW);
+            digitalWrite(motor1Pin2, LOW);
+            // Motor B
+            digitalWrite(motor2Pin1, LOW);
+            digitalWrite(motor2Pin2, LOW);
+    }
+}
 
 void init_stepper() {
   // set the speed at 5 rpm
@@ -297,36 +358,74 @@ void generate_text(uint32_t random_number)
 extern "C" void app_main()
 {
     //initArduino();
-    //Serial.begin(115200);
-    pinMode(23, INPUT);
+    Serial.begin(115200);
+    // pinMode(23, INPUT);
 
-    uint32_t random_number = generate_random_number();
+    // uint32_t random_number = generate_random_number();
 
-    init_leds();
-    init_stepper();
-    init_storage();
-    init_llm(random_number);
+    // init_leds();
+    // init_stepper();
+    // init_storage();
+    // init_llm(random_number);
+    init_wifi();
+    init_motors();
 
-    generate_text(random_number);
+    //generate_text(random_number);
 
     while (true)
     {
-        ESP_LOGI(TAG, "Waiting for PIR");
-        while (true)
-        {
-            if (digitalRead(23) == HIGH)
-            {
-                break;
-            }
-            delay(50);
-        }
-        init_audio();
-        say_with_animation(random_number);
-        deinit_audio();
-        random_number = generate_random_number();
-        generate_text(random_number);
-        // deinit the audio
 
+        while (!connection_status) {
+            connection_status = connect();
+        }
+
+        char code_received = get_code();
+
+        switch (code_received) {
+            case 'F':
+                run_motors(0);
+                Serial.println("Forward");
+                break;
+            case 'B':
+                run_motors(1);
+                Serial.println("Backward");
+                break;
+            case 'R':
+                run_motors(2);
+                Serial.println("Rotate Right");
+                break;
+            case 'L':
+                run_motors(3);
+                Serial.println("Rotate Left");
+                break;
+            case 'S':
+                run_motors(4);
+                Serial.println("Stop");
+                break;
+            case '\n':
+            case '\r':
+            case '.':
+            case ' ':
+                break;
+            default:
+                Serial.println("Invalid command");
+                break;
+        }
+        delay(10);
+        // ESP_LOGI(TAG, "Waiting for PIR");
+        // while (true)
+        // {
+            // if (digitalRead(23) == HIGH)
+            // {
+            //     break;
+            // }
+            // delay(50);
+        // }
+        // init_audio();
+        // say_with_animation(random_number);
+        // deinit_audio();
+        // random_number = generate_random_number();
+        // generate_text(random_number);
     }
 
     //run_leds(nullptr);
