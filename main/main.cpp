@@ -1,5 +1,5 @@
 #include "Arduino.h"
-#include <src/Stepper.h>
+#include <ESP32Servo.h>
 #include <Adafruit_NeoPixel.h>
 
 #include <stdio.h>
@@ -31,16 +31,13 @@ float temperature = 0.25f;        // 0.0 = greedy deterministic. 1.0 = original.
 float topp = 0.9f;               // top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
 int steps = 128;                 // number of steps to run for
 unsigned long long rng_seed = 0; // seed rng with time by default
-int32_t stepper_pos = 0;         // initial position of stepper motor
+int32_t servo_pos = 0;         // initial position of servo motor
 
-TaskHandle_t stepperTask = NULL;
+TaskHandle_t servoTask = NULL;
 TaskHandle_t ledsTask = NULL;
 
-// ULN2003 Motor Driver Pins
-#define IN1 5
-#define IN2 18
-#define IN3 19
-#define IN4 21
+#define DELAYPERDEGREE 5
+#define SAFETYMARGIN 110
 
 #define PIN       15
 #define NUMPIXELS 16
@@ -48,8 +45,8 @@ TaskHandle_t ledsTask = NULL;
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 #define DELAYVAL 50
 
-// initialize the stepper library
-Stepper myStepper(stepsPerRevolution, IN1, IN3, IN2, IN4);
+// initialize the servo library
+Servo neck_servo;
 
 Transformer transformer;
 Tokenizer tokenizer;
@@ -114,29 +111,44 @@ void run_motors(uint8_t direction) {
     }
 }
 
-void init_stepper() {
-  // set the speed at 5 rpm
-  myStepper.setSpeed(10);
-//   // initialize the serial port
-//   Serial.begin(115200);
+uint32_t generate_random_number(uint32_t scale = 255) {
+    // generate random number
+    uint32_t random_number = esp_random();
+    // Random value between 0 and UINT32_MAX
+    // scale it
+    random_number = (random_number % scale) + 1;
+    ESP_LOGD(TAG, "Random number: %d\n", random_number);
+    return random_number;
 }
 
-void run_stepper(void *param) {
-    uint32_t random_number = *((int *)param);
-    stepper_pos = random_number * 2;
-    if (random_number % 2 == 0) {
-        stepper_pos = -stepper_pos;
-    }
-    ESP_LOGI(TAG, "stepper_pos: %d", stepper_pos);
-    while (true) {
-        // step one revolution in one direction:
-        myStepper.step(stepper_pos);
-        delay(100);
+void init_servo() {
+    // use servo instead
+    neck_servo.attach(5);
+    neck_servo.write(90);
+}
 
-        // step one revolution in the other direction:
-        myStepper.step(-stepper_pos);
-        delay(100);
-        stepper_pos = 0;
+uint32_t calculate_delay(uint32_t cur_pos, uint32_t target_pos)
+{
+  ESP_LOGI(TAG, "cur_pos: %d, target_pos: %d", cur_pos, target_pos);
+  return ( cur_pos > target_pos? ((cur_pos - target_pos) * DELAYPERDEGREE * SAFETYMARGIN) / 100 : ((target_pos - cur_pos) * DELAYPERDEGREE * SAFETYMARGIN) / 100);
+}
+
+void run_servo(void *param) {
+    uint8_t rot_cnt = 0;
+    while (true) {
+        while (rot_cnt < 3) {
+            servo_pos = generate_random_number(180);
+            ESP_LOGI(TAG, "servo_pos: %d", servo_pos);
+            uint32_t servo_delay = calculate_delay(90, servo_pos);
+            ESP_LOGI(TAG, "Delay: %d", servo_delay);
+            neck_servo.write(servo_pos);
+            delay(servo_delay);
+            neck_servo.write(90);
+            delay(servo_delay);
+            servo_pos = 90;
+            rot_cnt++;
+        }
+        delay(10);
     }
 }
 
@@ -145,15 +157,7 @@ void init_leds() {
   //pixels.setBrightness(122); // Set BRIGHTNESS to about 4% (max = 255)
 }
 
-uint32_t generate_random_number() {
-    // generate random number
-    uint32_t random_number = esp_random();
-    // Random value between 0 and UINT32_MAX
-    // scale it to 255
-    random_number = (random_number % 255) + 1;
-    ESP_LOGD(TAG, "Random number: %d\n", random_number);
-    return random_number;
-}
+
 
 void run_leds(void *param) {
     while (true) {
@@ -281,17 +285,17 @@ void say_text(char *text)
 }
 
 void say_with_animation(uint32_t random_number) {
-    // start stepper and leds using freertos threads
-    xTaskCreate(run_stepper, "run_stepper", 4096, &random_number, 5, &stepperTask);
+    // start servo and leds using freertos threads
+    xTaskCreate(run_servo, "run_servo", 4096, &random_number, 5, &servoTask);
     xTaskCreate(run_leds, "run_leds", 4096, &random_number, 5, &ledsTask);
     say_text(text);
     vTaskDelete(ledsTask);
     turn_off_leds();
-    while (stepper_pos != 0)
+    while (servo_pos != 90)
     {
         delay(10);
     }
-    vTaskDelete(stepperTask);
+    vTaskDelete(servoTask);
 }
 
 /**
@@ -364,7 +368,7 @@ extern "C" void app_main()
     // uint32_t random_number = generate_random_number();
 
     // init_leds();
-    // init_stepper();
+    // init_servo();
     // init_storage();
     // init_llm(random_number);
     init_wifi();
@@ -429,5 +433,5 @@ extern "C" void app_main()
     }
 
     //run_leds(nullptr);
-    //run_stepper(nullptr);
+    //run_servo(nullptr);
 }

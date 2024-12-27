@@ -1,6 +1,6 @@
 idf_component_register(SRCS "main.cpp"
                     INCLUDE_DIRS "."
-                    REQUIRES Stepper Adafruit_NeoPixel llama.c spiffs ESPIDF-SAM
+                    REQUIRES ESP32Servo Adafruit_NeoPixel llama.c spiffs ESPIDF-SAM
                     LDFRAGMENTS "../linker.lf")
 
 # https://github.com/espressif/esp-idf/issues/11696#issuecomment-1596208414
