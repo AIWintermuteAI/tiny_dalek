@@ -97,7 +97,12 @@ bool connect() {
   return true;
 }
 
-char get_code() {
+typedef struct {
+  uint8_t number;
+  char code;
+} response_t;
+
+bool get_response(response_t *response) {
     char code_received = ' ';
     String numericPart = "";
 
@@ -117,9 +122,11 @@ char get_code() {
     }
 
     if (last_code_received == code_received) {
-      return '.';
+      return false;
     }
 
     last_code_received = code_received;
-    return code_received;
+    response->number = numericPart.toInt();
+    response->code = code_received;
+    return true;
 }

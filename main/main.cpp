@@ -133,6 +133,14 @@ uint32_t calculate_delay(uint32_t cur_pos, uint32_t target_pos)
   return ( cur_pos > target_pos? ((cur_pos - target_pos) * DELAYPERDEGREE * SAFETYMARGIN) / 100 : ((target_pos - cur_pos) * DELAYPERDEGREE * SAFETYMARGIN) / 100);
 }
 
+void rotate_servo(uint8_t angle) {
+    ESP_LOGI(TAG, "servo_pos: %d", servo_pos);
+    uint32_t servo_delay = calculate_delay(90, servo_pos);
+    ESP_LOGI(TAG, "Delay: %d", servo_delay);
+    neck_servo.write(angle);
+    delay(servo_delay);
+}
+
 void run_servo(void *param) {
     uint8_t rot_cnt = 0;
     while (true) {
@@ -156,8 +164,6 @@ void init_leds() {
   pixels.begin();
   //pixels.setBrightness(122); // Set BRIGHTNESS to about 4% (max = 255)
 }
-
-
 
 void run_leds(void *param) {
     while (true) {
@@ -363,18 +369,17 @@ extern "C" void app_main()
 {
     //initArduino();
     Serial.begin(115200);
-    // pinMode(23, INPUT);
 
-    // uint32_t random_number = generate_random_number();
+    uint32_t random_number = generate_random_number();
 
-    // init_leds();
-    // init_servo();
-    // init_storage();
-    // init_llm(random_number);
+    init_leds();
+    init_servo();
+    init_storage();
+    init_llm(random_number);
     init_wifi();
     init_motors();
 
-    //generate_text(random_number);
+    generate_text(random_number);
 
     while (true)
     {
@@ -383,28 +388,52 @@ extern "C" void app_main()
             connection_status = connect();
         }
 
-        char code_received = get_code();
+        response_t response = {0, ' '};
 
-        switch (code_received) {
+        bool data_received = get_response(&response);
+        if (!data_received) {
+            continue;
+        }
+
+        switch (response.code) {
             case 'F':
-                run_motors(0);
                 Serial.println("Forward");
+                run_motors(0);
                 break;
             case 'B':
-                run_motors(1);
                 Serial.println("Backward");
+                run_motors(1);
                 break;
             case 'R':
-                run_motors(2);
                 Serial.println("Rotate Right");
+                run_motors(2);
                 break;
             case 'L':
-                run_motors(3);
                 Serial.println("Rotate Left");
+                run_motors(3);
                 break;
             case 'S':
-                run_motors(4);
                 Serial.println("Stop");
+                run_motors(4);
+                break;
+            case 'W':
+                Serial.println("Speak");
+                init_audio();
+                say_with_animation(random_number);
+                deinit_audio();
+                random_number = generate_random_number();
+                generate_text(random_number);
+                break;
+            case 'M':
+                Serial.println("LEDs on");
+                run_leds(nullptr);
+                break;
+            case 'm':
+                Serial.println("LEDs off");
+                turn_off_leds();
+                break;
+            case 'J':
+                rotate_servo(response.number);
                 break;
             case '\n':
             case '\r':
@@ -416,22 +445,5 @@ extern "C" void app_main()
                 break;
         }
         delay(10);
-        // ESP_LOGI(TAG, "Waiting for PIR");
-        // while (true)
-        // {
-            // if (digitalRead(23) == HIGH)
-            // {
-            //     break;
-            // }
-            // delay(50);
-        // }
-        // init_audio();
-        // say_with_animation(random_number);
-        // deinit_audio();
-        // random_number = generate_random_number();
-        // generate_text(random_number);
     }
-
-    //run_leds(nullptr);
-    //run_servo(nullptr);
 }
