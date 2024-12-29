@@ -392,6 +392,7 @@ extern "C" void app_main()
 
         bool data_received = get_response(&response);
         if (!data_received) {
+            delay(10);
             continue;
         }
 
@@ -426,10 +427,11 @@ extern "C" void app_main()
                 break;
             case 'M':
                 Serial.println("LEDs on");
-                run_leds(nullptr);
+                xTaskCreate(run_leds, "run_leds", 4096, &random_number, 5, &ledsTask);
                 break;
             case 'm':
                 Serial.println("LEDs off");
+                vTaskDelete(ledsTask);
                 turn_off_leds();
                 break;
             case 'J':
@@ -444,6 +446,5 @@ extern "C" void app_main()
                 Serial.println("Invalid command");
                 break;
         }
-        delay(10);
     }
 }
