@@ -53,11 +53,11 @@ Tokenizer tokenizer;
 Sampler sampler;
 
 // Motor A
-#define motor1Pin1 15
-#define motor1Pin2 2
+#define motor1Pin1 18
+#define motor1Pin2 19
 // Motor B
-#define motor2Pin1 0
-#define motor2Pin2 4
+#define motor2Pin1 22
+#define motor2Pin2 23
 
 void init_motors() {
   // set all the motor control pins to outputs
@@ -123,8 +123,8 @@ uint32_t generate_random_number(uint32_t scale = 255) {
 
 void init_servo() {
     // use servo instead
-    neck_servo.attach(5);
-    neck_servo.write(90);
+    //neck_servo.attach(5);
+    //neck_servo.write(90);
 }
 
 uint32_t calculate_delay(uint32_t cur_pos, uint32_t target_pos)
