@@ -55,9 +55,11 @@ Sampler sampler;
 // Motor A
 #define motor1Pin1 18
 #define motor1Pin2 19
+#define motor1PinPWM 5
 // Motor B
 #define motor2Pin1 22
 #define motor2Pin2 23
+#define motor2PinPWM 21
 
 void init_motors() {
   // set all the motor control pins to outputs
@@ -65,6 +67,8 @@ void init_motors() {
   pinMode(motor1Pin2, OUTPUT);
   pinMode(motor2Pin1, OUTPUT);
   pinMode(motor2Pin2, OUTPUT);
+  analogWrite(motor1PinPWM, 175);
+  analogWrite(motor2PinPWM, 175);
 }
 
 void run_motors(uint8_t direction) {
@@ -123,8 +127,8 @@ uint32_t generate_random_number(uint32_t scale = 255) {
 
 void init_servo() {
     // use servo instead
-    //neck_servo.attach(5);
-    //neck_servo.write(90);
+    neck_servo.attach(4);
+    neck_servo.write(90);
 }
 
 uint32_t calculate_delay(uint32_t cur_pos, uint32_t target_pos)
@@ -162,7 +166,14 @@ void run_servo(void *param) {
 
 void init_leds() {
   pixels.begin();
-  //pixels.setBrightness(122); // Set BRIGHTNESS to about 4% (max = 255)
+  //pixels.setBrightness(122); // Set BRIGHTNESS to about 50% (max = 255)
+  pixels.clear();
+  pixels.fill(pixels.Color(0, 255, 0));
+  pixels.show();
+  delay(250);
+  pixels.clear();
+  pixels.show();
+  ESP_LOGI(TAG, "LEDs done\n");
 }
 
 void run_leds(void *param) {
